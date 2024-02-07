@@ -26,6 +26,7 @@ use retina::{
     client::{SetupOptions, Transport},
     codec::{AudioParameters, CodecItem, ParametersRef, VideoParameters},
 };
+use serde::{Deserialize, Serialize};
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
@@ -58,6 +59,10 @@ pub struct Opts {
     #[arg(long)]
     no_audio: bool,
 
+    /// Don't include supplemental video timing data.
+    #[arg(long)]
+    no_timing_info: bool,
+
     /// Allow lost packets mid-stream without aborting.
     #[arg(long)]
     allow_loss: bool,
@@ -78,6 +83,31 @@ pub struct Opts {
 
     /// Path to `.mp4` file to write.
     out: PathBuf,
+}
+
+fn chrono_to_ntp<TZ>(
+    orig: chrono::DateTime<TZ>,
+) -> Result<retina::NtpTimestamp, std::num::TryFromIntError>
+where
+    TZ: chrono::TimeZone,
+{
+    let epoch: chrono::DateTime<chrono::Utc> = "1900-01-01 00:00:00Z".parse().unwrap();
+    let elapsed: chrono::TimeDelta = orig.to_utc() - epoch;
+    let sec_since_epoch: u32 = elapsed.num_seconds().try_into()?;
+    let nanos = elapsed.subsec_nanos();
+    let frac = nanos as f64 / 1e9;
+    let frac_int = (frac * f64::from(u32::MAX)).round() as u32;
+    let val = (u64::from(sec_since_epoch) << 32) + u64::from(frac_int);
+    Ok(retina::NtpTimestamp(val))
+}
+
+#[test]
+fn test_ntp_roundtrip() {
+    let orig_str = "2024-02-17T21:14:34.013+01:00";
+    let orig: chrono::DateTime<chrono::Utc> = orig_str.parse().unwrap();
+    let ntp_timestamp = chrono_to_ntp(orig).unwrap();
+    let display = format!("{ntp_timestamp}");
+    assert_eq!(display, orig_str.to_string());
 }
 
 /// Writes a box length for everything appended in the supplied scope.
@@ -112,9 +142,80 @@ pub struct Mp4Writer<W: AsyncWrite + AsyncSeek + Send + Unpin> {
     /// The (1-indexed) video sample (frame) number of each sync sample (random access point).
     video_sync_sample_nums: Vec<u32>,
 
+    save_timing_info: bool,
+    sender_report: Option<SenderReportInfo>,
+
     video_trak: TrakTracker,
     audio_trak: TrakTracker,
     inner: W,
+}
+
+/// Timing information received occasionally via RTCP sender reports
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SenderReportInfo {
+    /// Receive timestamp as NTP (Network Time Protocol) timestamp
+    recv: u64,
+    /// NTP (Network Time Protocol) timestamp as reported by the sender
+    ntp: u64,
+    /// RTP (Real Time Protocol) timestamp as reported by the sender
+    rtp: u32,
+}
+
+impl SenderReportInfo {
+    const fn uuid() -> &'static [u8; 16] {
+        b"strawlab.org/o8B"
+    }
+    fn from_sender_report(orig: retina::rtcp::SenderReportRef<'_>) -> Self {
+        let recv = chrono_to_ntp(chrono::Utc::now()).unwrap().0;
+        let ntp = orig.ntp_timestamp().0;
+        let rtp = orig.rtp_timestamp();
+        Self { recv, ntp, rtp }
+    }
+}
+
+/// Timing information associated with each video frame
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FrameInfo {
+    /// Receive timestamp as NTP (Network Time Protocol) timestamp
+    recv: u64,
+    /// RTP (Real Time Protocol) timestamp as reported by the sender
+    rtp: u32,
+}
+
+impl FrameInfo {
+    const fn uuid() -> &'static [u8; 16] {
+        b"strawlab.org/89H"
+    }
+    fn new(timestamp: retina::Timestamp) -> Self {
+        let recv = chrono_to_ntp(chrono::Utc::now()).unwrap().0;
+        let rtp = timestamp.timestamp() as u32;
+        Self { recv, rtp }
+    }
+}
+
+fn udu_to_rbsp(uuid: &[u8; 16], buf: &[u8]) -> Vec<u8> {
+    let size = uuid.len() + buf.len();
+    let n255s = size / 256;
+    let rem: u8 = (size % 256) as u8;
+
+    let size_buf = {
+        let mut size_buf = vec![0xff; n255s + 1];
+        size_buf[n255s] = rem;
+        size_buf
+    };
+
+    // uuid_iso_iec_11578
+
+    let final_size = 3 + size_buf.len() + size;
+    let mut final_buf = vec![0; final_size];
+
+    final_buf[0] = 0x06; // code 6 - SEI
+    final_buf[1] = 0x05; // header type: UserDataUnregistered
+    final_buf[2..2 + size_buf.len()].copy_from_slice(&size_buf);
+    final_buf[2 + size_buf.len()..2 + size_buf.len() + uuid.len()].copy_from_slice(uuid);
+    final_buf[2 + size_buf.len() + uuid.len()..final_size - 1].copy_from_slice(buf);
+    final_buf[final_size - 1] = 0x80;
+    final_buf
 }
 
 /// A chunk: a group of samples that have consecutive byte positions and same sample description.
@@ -152,6 +253,9 @@ impl TrakTracker {
     ) -> Result<(), Error> {
         if self.samples > 0 && loss > 0 && !allow_loss {
             bail!("Lost {} RTP packets mid-stream", loss);
+        }
+        if self.samples > 0 && loss > 0 {
+            warn!("Lost {} RTP packets mid-stream", loss);
         }
         self.samples += 1;
         if self.next_pos != Some(byte_pos)
@@ -243,6 +347,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
     pub async fn new(
         audio_params: Option<Box<AudioParameters>>,
         allow_loss: bool,
+        save_timing_info: bool,
         mut inner: W,
     ) -> Result<Self, Error> {
         let mut buf = BytesMut::new();
@@ -265,6 +370,8 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
             video_trak: TrakTracker::default(),
             audio_trak: TrakTracker::default(),
             video_sync_sample_nums: Vec::new(),
+            save_timing_info,
+            sender_report: Default::default(),
             mdat_start,
             mdat_pos: mdat_start,
         })
@@ -533,11 +640,55 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
         Ok(())
     }
 
+    fn enqueue_sender_report(
+        &mut self,
+        sr: retina::rtcp::SenderReportRef<'_>,
+    ) -> Result<(), Error> {
+        let sri = SenderReportInfo::from_sender_report(sr);
+
+        if self.sender_report.replace(sri).is_some() {
+            todo!("service report already present. return non-fatal error.")
+        }
+        Ok(())
+    }
+
     async fn video(
         &mut self,
         stream: &retina::client::Stream,
         frame: retina::codec::VideoFrame,
     ) -> Result<(), Error> {
+        let timing_info_buf = if self.save_timing_info {
+            // For every frame, we write additional timing information.
+            let mut buf = {
+                let json_buf = serde_json::to_vec(&FrameInfo::new(frame.timestamp())).unwrap();
+                let rbsp_buf = udu_to_rbsp(FrameInfo::uuid(), &json_buf);
+                // Because RBSP is JSON and header, emulation protection is not
+                // needed because there are no consequtive null bytes. Thus, the
+                // RBSP is the EBSP for this case.
+                let ebsp_buf = rbsp_buf;
+                buf_to_avcc(&ebsp_buf)
+            };
+
+            // When we have recieved a service report, write that information, too.
+            if let Some(sr) = self.sender_report.take() {
+                let json_buf = serde_json::to_vec(&sr).unwrap();
+                let rbsp_buf = udu_to_rbsp(SenderReportInfo::uuid(), &json_buf);
+                // Because RBSP is JSON and header, emulation protection is not
+                // needed because there are no consequtive null bytes. Thus, the
+                // RBSP is the EBSP for this case.
+                let ebsp_buf = rbsp_buf;
+                let head = buf_to_avcc(&ebsp_buf);
+
+                // Make the service report buffer come first as we received it
+                // first. Then extend the buffer with the frame info.
+                let tail = std::mem::replace(&mut buf, head);
+                buf.extend(tail);
+            };
+            buf
+        } else {
+            vec![]
+        };
+
         println!(
             "{}: {}-byte video frame",
             &frame.timestamp(),
@@ -570,7 +721,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
             }
         };
         self.cur_video_params_sample_description_index = Some(sample_description_index);
-        let size = u32::try_from(frame.data().remaining())?;
+        let size = u32::try_from(timing_info_buf.len() + frame.data().remaining())?;
         self.video_trak.add_sample(
             sample_description_index,
             self.mdat_pos,
@@ -585,6 +736,9 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
             .ok_or_else(|| anyhow!("mdat_pos overflow"))?;
         if frame.is_random_access_point() {
             self.video_sync_sample_nums.push(self.video_trak.samples);
+        }
+        if !timing_info_buf.is_empty() {
+            self.inner.write_all(&timing_info_buf).await?;
         }
         self.inner.write_all(frame.data()).await?;
         Ok(())
@@ -647,6 +801,7 @@ async fn copy<'a>(
                     CodecItem::Rtcp(rtcp) => {
                         if let (Some(t), Some(Ok(Some(sr)))) = (rtcp.rtp_timestamp(), rtcp.pkts().next().map(retina::rtcp::PacketRef::as_sender_report)) {
                             println!("{}: SR ts={}", t, sr.ntp_timestamp());
+                            mp4.enqueue_sender_report(sr)?;
                         }
                     },
                     _ => continue,
@@ -689,7 +844,8 @@ async fn write_mp4(
     tmp_filename.push(PARTIAL_SUFFIX); // OsString::push doesn't put in a '/', unlike PathBuf::.
     let tmp_filename: PathBuf = tmp_filename.into();
     let out = tokio::fs::File::create(&tmp_filename).await?;
-    let mut mp4 = Mp4Writer::new(audio_params, opts.allow_loss, out).await?;
+    let save_timing_info = !opts.no_timing_info;
+    let mut mp4 = Mp4Writer::new(audio_params, opts.allow_loss, save_timing_info, out).await?;
     let result = copy(opts, &mut session, stop_signal, &mut mp4).await;
     if let Err(e) = result {
         // Log errors about finishing, returning the original error.
@@ -715,6 +871,14 @@ async fn write_mp4(
             Ok(())
         }
     }
+}
+
+fn buf_to_avcc(nal: &[u8]) -> Vec<u8> {
+    let sz: u32 = nal.len().try_into().unwrap();
+    let mut result = vec![0u8; nal.len() + 4];
+    result[0..4].copy_from_slice(&sz.to_be_bytes());
+    result[4..].copy_from_slice(nal);
+    result
 }
 
 pub async fn run(opts: Opts) -> Result<(), Error> {

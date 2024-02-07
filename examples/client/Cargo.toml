@@ -16,3 +16,6 @@ anyhow = "1.0.41"
 itertools = "0.10.1"
 mylog = { git = "https://github.com/scottlamb/mylog" }
 clap = { version = "4.1.4", features = ["derive"] }
+chrono = { version = "0.4.34", features = ["serde"] }
+serde = { version = "1.0.196", features = ["derive"] }
+serde_json = "1.0.113"
