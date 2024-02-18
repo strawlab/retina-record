@@ -961,10 +961,7 @@ pub async fn run(opts: Opts) -> Result<(), Error> {
     }
     let result = write_mp4(&opts, session, audio_stream.map(|(_i, p)| p), stop_signal).await;
     if result.is_err() {
-        tracing::info!(
-            "writing MP4 failed; \
-                    details will be logged with `Fatal:` after RTSP session teardown"
-        );
+        tracing::error!("Writing MP4 failed. Taking down RTSP session.");
     }
 
     // Session has now been dropped, on success or failure. A TEARDOWN should
