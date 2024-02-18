@@ -1,0 +1,20 @@
+name: Rust
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # At 23:25 on Thursday.
+    - cron: "25 23 * * 4"
+
+jobs:
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - name: Test
+      run: cargo test
