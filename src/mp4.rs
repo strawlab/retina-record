@@ -689,7 +689,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
             vec![]
         };
 
-        println!(
+        tracing::trace!(
             "{}: {}-byte video frame",
             &frame.timestamp(),
             frame.data().remaining(),
@@ -745,7 +745,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
     }
 
     async fn audio(&mut self, frame: retina::codec::AudioFrame) -> Result<(), Error> {
-        println!(
+        tracing::trace!(
             "{}: {}-byte audio frame",
             frame.timestamp(),
             frame.data().remaining()
@@ -800,7 +800,7 @@ async fn copy<'a>(
                     },
                     CodecItem::Rtcp(rtcp) => {
                         if let (Some(t), Some(Ok(Some(sr)))) = (rtcp.rtp_timestamp(), rtcp.pkts().next().map(retina::rtcp::PacketRef::as_sender_report)) {
-                            println!("{}: SR ts={}", t, sr.ntp_timestamp());
+                            tracing::debug!("{}: SR ts={}", t, sr.ntp_timestamp());
                             mp4.enqueue_sender_report(sr)?;
                         }
                     },
