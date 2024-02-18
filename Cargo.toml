@@ -9,6 +9,7 @@ authors = [
 repository = "https://github.com/strawlab/iana-time-zone"
 license = "MIT OR Apache-2.0"
 categories = ["network-programming", "multimedia::video"]
+description = "Command-line application to record MP4 video from RTSP cameras"
 
 [dependencies]
 bytes = "1.0.1"

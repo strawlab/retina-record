@@ -1,7 +1,10 @@
 // Copyright (C) 2021 Scott Lamb <slamb@slamb.org>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! RTSP client examples.
+//! Command-line application to record MP4 video from RTSP cameras.
+//!
+//! Documentation and repository at
+//! [github.com/strawlab/retina-record](https://github.com/strawlab/retina-record).
 
 mod info;
 mod mp4;

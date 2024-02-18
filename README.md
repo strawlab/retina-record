@@ -2,6 +2,9 @@
 
 Command-line application to record MP4 video from RTSP cameras.
 
+Documentation and repository at
+[github.com/strawlab/retina-record](https://github.com/strawlab/retina-record).
+
 ## Features
 
 * Does not transcode video from the camera but streams the already-encoded H264

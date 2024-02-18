@@ -1,21 +1,7 @@
 // Copyright (C) 2021 Scott Lamb <slamb@slamb.org>
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
-//! Proof-of-concept `.mp4` writer.
-//!
-//! This writes media data (`mdat`) to a stream, buffering parameters for a
-//! `moov` atom at the end. This avoids the need to buffer the media data
-//! (`mdat`) first or reserved a fixed size for the `moov`, but it will slow
-//! playback, particularly when serving `.mp4` files remotely.
-//!
-//! For a more high-quality implementation, see [Moonfire NVR](https://github.com/scottlamb/moonfire-nvr).
-//! It's better tested, places the `moov` atom at the start, can do HTTP range
-//! serving for arbitrary time ranges, and supports standard and fragmented
-//! `.mp4` files.
-//!
-//! See the BMFF spec, ISO/IEC 14496-12:2015:
-//! https://github.com/scottlamb/moonfire-nvr/wiki/Standards-and-specifications
-//! https://standards.iso.org/ittf/PubliclyAvailableStandards/c068960_ISO_IEC_14496-12_2015.zip
+//! `.mp4` writer
 
 use anyhow::{anyhow, bail, Context, Error};
 use bytes::{Buf, BufMut, BytesMut};
