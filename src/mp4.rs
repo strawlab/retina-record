@@ -130,8 +130,8 @@ macro_rules! write_box {
 /// Writes `.mp4` data to a sink.
 /// See module-level documentation for details.
 pub struct Mp4Writer<W: AsyncWrite + AsyncSeek + Send + Unpin> {
-    mdat_start: u32,
-    mdat_pos: u32,
+    mdat_start: u64,
+    mdat_pos: u64,
     video_params: Vec<VideoParameters>,
 
     /// The most recently used 1-based index within `video_params`.
@@ -221,7 +221,7 @@ fn udu_to_rbsp(uuid: &[u8; 16], buf: &[u8]) -> Vec<u8> {
 /// A chunk: a group of samples that have consecutive byte positions and same sample description.
 struct Chunk {
     first_sample_number: u32, // 1-based index
-    byte_pos: u32,            // starting byte of first sample
+    byte_pos: u64,            // starting byte of first sample
     sample_description_index: u32,
 }
 
@@ -229,7 +229,7 @@ struct Chunk {
 #[derive(Default)]
 struct TrakTracker {
     samples: u32,
-    next_pos: Option<u32>,
+    next_pos: Option<u64>,
     chunks: Vec<Chunk>,
     sizes: Vec<u32>,
 
@@ -245,7 +245,7 @@ impl TrakTracker {
     fn add_sample(
         &mut self,
         sample_description_index: u32,
-        byte_pos: u32,
+        byte_pos: u64,
         size: u32,
         timestamp: retina::Timestamp,
         loss: u16,
@@ -269,7 +269,7 @@ impl TrakTracker {
             });
         }
         self.sizes.push(size);
-        self.next_pos = Some(byte_pos + size);
+        self.next_pos = Some(byte_pos + u64::from(size));
         if let Some(last_pts) = self.last_pts.replace(timestamp.timestamp()) {
             let duration = timestamp.timestamp().checked_sub(last_pts).unwrap();
             self.tot_duration += u64::try_from(duration).unwrap();
@@ -332,11 +332,11 @@ impl TrakTracker {
                 buf.put_u32(*s);
             }
         });
-        write_box!(buf, b"stco", {
+        write_box!(buf, b"co64", {
             buf.put_u32(0); // version
             buf.put_u32(u32::try_from(self.chunks.len())?); // entry_count
             for c in &self.chunks {
-                buf.put_u32(c.byte_pos);
+                buf.put_u64(c.byte_pos);
             }
         });
         Ok(())
@@ -358,8 +358,12 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
                 b'i', b's', b'o', b'm', // compatible_brands[0]
             ]);
         });
-        buf.extend_from_slice(&b"\0\0\0\0mdat"[..]);
-        let mdat_start = u32::try_from(buf.len())?;
+
+        let mut mdat_large_header = [0u8; 16];
+        mdat_large_header[0..4].copy_from_slice( &1u32.to_be_bytes()[..]);
+        mdat_large_header[4..8].copy_from_slice(b"mdat");
+        buf.extend_from_slice(&mdat_large_header[..]);
+        let mdat_start = u64::try_from(buf.len())?;
         inner.write_all(&buf).await?;
         Ok(Mp4Writer {
             inner,
@@ -413,10 +417,10 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
         });
         self.inner.write_all(&buf).await?;
         self.inner
-            .seek(SeekFrom::Start(u64::from(self.mdat_start - 8)))
+            .seek(SeekFrom::Start(self.mdat_start - 8))
             .await?;
         self.inner
-            .write_all(&(self.mdat_pos + 8 - self.mdat_start).to_be_bytes()[..])
+            .write_all(&(self.mdat_pos + 16 - self.mdat_start).to_be_bytes()[..])
             .await?;
         Ok(())
     }
@@ -732,7 +736,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
         )?;
         self.mdat_pos = self
             .mdat_pos
-            .checked_add(size)
+            .checked_add(u64::from(size))
             .ok_or_else(|| anyhow!("mdat_pos overflow"))?;
         if frame.is_random_access_point() {
             self.video_sync_sample_nums.push(self.video_trak.samples);
@@ -761,7 +765,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
         )?;
         self.mdat_pos = self
             .mdat_pos
-            .checked_add(size)
+            .checked_add(u64::from(size))
             .ok_or_else(|| anyhow!("mdat_pos overflow"))?;
         self.inner.write_all(frame.data()).await?;
         Ok(())
