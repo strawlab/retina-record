@@ -187,7 +187,8 @@
       same "printed page" as the copyright notice for easier
       identification within third-party archives.
 
-   Copyright 2021 Scott Lamb <slamb@slamb.org>
+   Copyright 2021-2024 Scott Lamb <slamb@slamb.org>
+   Copyright 2024 Andrew Straw <strawman@astraw.com>
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
