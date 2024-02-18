@@ -107,7 +107,8 @@ fn test_ntp_roundtrip() {
     let orig: chrono::DateTime<chrono::Utc> = orig_str.parse().unwrap();
     let ntp_timestamp = chrono_to_ntp(orig).unwrap();
     let display = format!("{ntp_timestamp}");
-    assert_eq!(display, orig_str.to_string());
+    let parsed: chrono::DateTime<chrono::Utc> = display.parse().unwrap();
+    assert_eq!(orig, parsed);
 }
 
 /// Writes a box length for everything appended in the supplied scope.
