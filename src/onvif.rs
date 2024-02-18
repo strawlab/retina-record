@@ -4,10 +4,10 @@
 use anyhow::{anyhow, Error};
 use clap::Parser;
 use futures::StreamExt;
-use log::{error, info};
 use retina::client::{SessionGroup, SetupOptions};
 use retina::codec::CodecItem;
 use std::sync::Arc;
+use tracing::{error, info};
 
 #[derive(Parser)]
 pub struct Opts {

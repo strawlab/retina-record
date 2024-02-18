@@ -9,8 +9,6 @@ mod onvif;
 
 use anyhow::Error;
 use clap::Parser;
-use log::{error, info};
-use std::str::FromStr;
 
 #[derive(Parser)]
 struct Source {
@@ -37,33 +35,6 @@ enum Cmd {
     Onvif(onvif::Opts),
 }
 
-fn init_logging() -> mylog::Handle {
-    let h = mylog::Builder::new()
-        .set_format(
-            ::std::env::var("MOONFIRE_FORMAT")
-                .map_err(|_| ())
-                .and_then(|s| mylog::Format::from_str(&s))
-                .unwrap_or(mylog::Format::Google),
-        )
-        .set_spec(::std::env::var("MOONFIRE_LOG").as_deref().unwrap_or("info"))
-        .build();
-    h.clone().install().unwrap();
-    h
-}
-
-#[tokio::main]
-async fn main() {
-    let mut h = init_logging();
-    if let Err(e) = {
-        let _a = h.async_scope();
-        main_inner().await
-    } {
-        error!("Fatal: {}", itertools::join(e.chain(), "\ncaused by: "));
-        std::process::exit(1);
-    }
-    info!("Done");
-}
-
 /// Interpets the `username` and `password` of a [Source].
 fn creds(
     username: Option<String>,
@@ -79,7 +50,9 @@ fn creds(
     }
 }
 
-async fn main_inner() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt::init();
     let cmd = Cmd::parse();
     match cmd {
         Cmd::Info(opts) => info::run(opts).await,
