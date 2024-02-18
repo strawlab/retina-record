@@ -3,6 +3,12 @@ name = "retina-record"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.64"
+authors = [
+    "Andrew Straw <strawman@astraw.com>",
+]
+repository = "https://github.com/strawlab/iana-time-zone"
+license = "MIT OR Apache-2.0"
+categories = ["network-programming", "multimedia::video"]
 
 [dependencies]
 bytes = "1.0.1"
