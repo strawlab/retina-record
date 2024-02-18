@@ -1,5 +1,9 @@
 # retina-record
 
+[![Crates.io](https://img.shields.io/crates/v/retina-record)](https://crates.io/crates/retina-record)
+[![Crate License](https://img.shields.io/crates/l/retina-record.svg)](https://crates.io/crates/retina-record)
+[![Rust](https://github.com/strawlab/retina-record/workflows/Rust/badge.svg)](https://github.com/strawlab/retina-record/actions)
+
 Command-line application to record MP4 video from RTSP cameras.
 
 Documentation and repository at
