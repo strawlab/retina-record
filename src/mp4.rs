@@ -87,14 +87,28 @@ where
     Ok(retina::NtpTimestamp(val))
 }
 
-#[test]
-fn test_ntp_roundtrip() {
-    let orig_str = "2024-02-17T21:14:34.013+01:00";
-    let orig: chrono::DateTime<chrono::Utc> = orig_str.parse().unwrap();
-    let ntp_timestamp = chrono_to_ntp(orig).unwrap();
-    let display = format!("{ntp_timestamp}");
-    let parsed: chrono::DateTime<chrono::Utc> = display.parse().unwrap();
-    assert_eq!(orig, parsed);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const ORIG_STR: &str = "2024-02-17T21:14:34.013+01:00";
+
+    #[test]
+    fn test_ntp_roundtrip() {
+        let orig: chrono::DateTime<chrono::Utc> = ORIG_STR.parse().unwrap();
+        let ntp_timestamp = chrono_to_ntp(orig).unwrap();
+        let display = format!("{ntp_timestamp}");
+        let parsed: chrono::DateTime<chrono::Utc> = display.parse().unwrap();
+        assert_eq!(orig, parsed);
+    }
+
+    #[test]
+    fn test_ntp_decode() {
+        let orig: chrono::DateTime<chrono::Utc> = ORIG_STR.parse().unwrap();
+        assert_eq!(
+            chrono_to_ntp(orig).unwrap(),
+            retina::NtpTimestamp(16824201542114736079)
+        );
+    }
 }
 
 /// Writes a box length for everything appended in the supplied scope.
