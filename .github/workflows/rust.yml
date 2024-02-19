@@ -2,9 +2,7 @@ name: Rust
 
 on:
   push:
-    branches: [ main ]
   pull_request:
-    branches: [ main ]
   schedule:
     # At 23:25 on Thursday.
     - cron: "25 23 * * 4"
