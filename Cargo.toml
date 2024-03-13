@@ -6,6 +6,7 @@ rust-version = "1.70"
 authors = ["Andrew Straw <strawman@astraw.com>"]
 repository = "https://github.com/strawlab/retina-record"
 license = "MIT OR Apache-2.0"
+keywords = ["video", "camera", "mp4", "rtsp", "video-stream"]
 categories = ["network-programming", "multimedia::video"]
 description = "Command-line application to record MP4 video from RTSP cameras"
 
