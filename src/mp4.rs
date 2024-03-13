@@ -12,16 +12,12 @@ use retina::{
     codec::{AudioParameters, CodecItem, ParametersRef, VideoParameters},
 };
 use serde::{Deserialize, Serialize};
-use tracing::{debug, info, warn};
-
-use std::num::NonZeroU32;
-use std::path::PathBuf;
-use std::{convert::TryFrom, pin::Pin};
-use std::{io::SeekFrom, sync::Arc};
+use std::{io::SeekFrom, num::NonZeroU32, path::PathBuf, pin::Pin, sync::Arc};
 use tokio::{
     fs::File,
     io::{AsyncSeek, AsyncSeekExt, AsyncWrite, AsyncWriteExt},
 };
+use tracing::{debug, info, warn};
 
 #[derive(Parser)]
 pub struct Opts {
