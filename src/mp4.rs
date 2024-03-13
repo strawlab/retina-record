@@ -361,7 +361,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
         });
 
         let mut mdat_large_header = [0u8; 16];
-        mdat_large_header[0..4].copy_from_slice( &1u32.to_be_bytes()[..]);
+        mdat_large_header[0..4].copy_from_slice(&1u32.to_be_bytes()[..]);
         mdat_large_header[4..8].copy_from_slice(b"mdat");
         buf.extend_from_slice(&mdat_large_header[..]);
         let mdat_start = u64::try_from(buf.len())?;
