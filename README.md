@@ -13,7 +13,7 @@ Documentation and repository at
 
 * Does not transcode video from the camera but streams the already-encoded H264
   video directly to an .mp4 file. Consequently, CPU usage is minimal.
-* Stores additional timing data inline in the .mp4 file. See "Timing metadata"
+* Stores additional timing data inline in the .mp4 file. See "Timing data"
   below.
 * Based on the [`retina`](https://crates.io/crates/retina) Rust crate to support
   H264 RTSP cameras. This is the same library underlying [Moonfire
