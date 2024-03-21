@@ -26,14 +26,18 @@ Documentation and repository at
 best-effort reconstruction of the timing of individual camera frames and
 synchronizing videos from multiple cameras. The overall philosophy is to log, in
 a lossless manner, the timing information sent from the camera as well as the
-received time at which `retina-record` received the data. If the camera has a
-good internal clock (e.g. because it is using a well behaved NTP client), the
-timestamps from the camera alone should be sufficient to reconstruct quite
-precisely (see below for details about "quite precisely") when images were acquired. Alternatively, if
-the camera's internal clock is not as ideal, the timestamps saved by
-`retina-record` can be used to roughly align the data under the assumptions that
-network delays are insignificant and that the clock of the PC on which
-`retina-record` runs is reliable.
+nanosecond-specified time at which `retina-record` received the data. If the
+camera has a good internal clock (e.g. because it is using a well behaved NTP
+client), the timestamps from the camera alone should be sufficient to
+reconstruct quite precisely (see below for details about "quite precisely") when
+images were acquired. Alternatively, if the camera's internal clock is not as
+ideal, the timestamps saved by `retina-record` can be used to roughly align the
+data under the assumptions that network delays are insignificant and that the
+clock of the PC on which `retina-record` runs is reliable. Furthermore,
+supported by the partial redundancy of these data types, more sophisticated time
+reconstruction approaches can be implemented on videos recorded with
+`retina-record`. These data are saved in the H264 video track in the MP4 file
+using Supplemental Enhancement Information (SEI).
 
 ### Frame timing data
 
