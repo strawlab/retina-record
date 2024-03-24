@@ -70,5 +70,5 @@ need to update the URL for your camera and presumably the password and output
 filename.
 
 ```shell
-retina-record mp4 --url rtsp://192.168.1.32/cam1/onvif-h264 --username admin --password secret-password output.mp4
+retina-record --url rtsp://192.168.1.32/cam1/onvif-h264 --username admin --password secret-password output.mp4
 ```

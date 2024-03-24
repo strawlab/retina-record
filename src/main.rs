@@ -6,9 +6,7 @@
 //! Documentation and repository at
 //! [github.com/strawlab/retina-record](https://github.com/strawlab/retina-record).
 
-mod info;
 mod mp4;
-mod onvif;
 
 use anyhow::Error;
 use clap::Parser;
@@ -26,16 +24,6 @@ struct Source {
     /// Password; requires username.
     #[clap(long, requires = "username")]
     password: Option<String>,
-}
-
-#[derive(Parser)]
-enum Cmd {
-    /// Gets info about available streams and exits.
-    Info(info::Opts),
-    /// Writes available audio and video streams to mp4 file; use Ctrl+C to stop.
-    Mp4(mp4::Opts),
-    /// Follows ONVIF metadata stream; use Ctrl+C to stop.
-    Onvif(onvif::Opts),
 }
 
 /// Interpets the `username` and `password` of a [Source].
@@ -56,10 +44,6 @@ fn creds(
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     tracing_subscriber::fmt::init();
-    let cmd = Cmd::parse();
-    match cmd {
-        Cmd::Info(opts) => info::run(opts).await,
-        Cmd::Mp4(opts) => mp4::run(opts).await,
-        Cmd::Onvif(opts) => onvif::run(opts).await,
-    }
+    let opts = mp4::Opts::parse();
+    mp4::run(opts).await
 }
