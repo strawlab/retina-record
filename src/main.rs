@@ -11,7 +11,7 @@ mod mp4;
 use anyhow::Error;
 use clap::Parser;
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 struct Source {
     /// `rtsp://` URL to connect to.
     #[clap(long)]

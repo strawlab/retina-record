@@ -19,7 +19,7 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 pub struct Opts {
     #[command(flatten)]
     src: super::Source,
@@ -52,6 +52,10 @@ pub struct Opts {
     /// When to issue a `TEARDOWN` request: `auto`, `always`, or `never`.
     #[arg(default_value_t, long)]
     teardown: retina::client::TeardownPolicy,
+
+    /// Start time
+    #[arg(long)]
+    start: Option<chrono::NaiveTime>,
 
     /// Duration after which to exit automatically, in seconds.
     #[arg(long, name = "secs")]
@@ -888,6 +892,28 @@ fn buf_to_avcc(nal: &[u8]) -> Vec<u8> {
 pub async fn run(opts: Opts) -> Result<(), Error> {
     if matches!(opts.transport, Transport::Udp(_)) && !opts.allow_loss {
         warn!("Using --transport=udp without strongly recommended --allow-loss!");
+    }
+
+    if let Some(start) = &opts.start {
+        let now = chrono::Local::now();
+        let dt = chrono::NaiveDateTime::new(now.date_naive(), *start);
+        let start = dt.and_local_timezone(chrono::Local).unwrap();
+        let wait_dur = start - now;
+        if wait_dur.num_milliseconds() >= 0 {
+            info!(
+                "Start time specified as {start}. Waiting {} seconds.",
+                wait_dur.num_seconds()
+            );
+            loop {
+                if chrono::Local::now() >= start {
+                    break;
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+            }
+        } else {
+            anyhow::bail!("Start time already passed.");
+        }
     }
 
     let creds = super::creds(opts.src.username.clone(), opts.src.password.clone());
