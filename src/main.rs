@@ -12,6 +12,7 @@ use anyhow::Error;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
+#[command(version, about)]
 struct Source {
     /// `rtsp://` URL to connect to.
     #[clap(long)]
