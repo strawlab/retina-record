@@ -970,7 +970,10 @@ pub async fn run(opts: Opts) -> Result<(), Error> {
     };
     tracing::info!("Will save MP4 file to: \"{}\"", out_path.display());
 
-    if wait_dur.num_milliseconds() >= 0 {
+    if wait_dur.num_milliseconds() < 0 {
+        anyhow::bail!("Start time already passed.");
+    }
+    if wait_dur.num_milliseconds() > 0 {
         info!(
             "Start time specified as {start}. Waiting {} seconds.",
             wait_dur.num_seconds()
@@ -982,8 +985,6 @@ pub async fn run(opts: Opts) -> Result<(), Error> {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
         }
-    } else {
-        anyhow::bail!("Start time already passed.");
     }
 
     let creds = super::creds(opts.src.username.clone(), opts.src.password.clone());
