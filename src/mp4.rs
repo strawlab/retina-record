@@ -653,7 +653,7 @@ impl<W: AsyncWrite + AsyncSeek + Send + Unpin> Mp4Writer<W> {
         let sri = SenderReportInfo::from_sender_report(sr);
 
         if let Some(old_sri) = self.sender_report.replace(sri.clone()) {
-            tracing::error!(
+            tracing::warn!(
                 "Second service report received prior to receiving a new \
             video frame. Old {old_sri:?}, new {sri:?}"
             );
