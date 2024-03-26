@@ -67,8 +67,9 @@ pub struct Opts {
     #[arg(default_value_t, long)]
     transport: retina::client::Transport,
 
-    /// Path to `.mp4` file to write.
-    out: PathBuf,
+    /// Path to `.mp4` file to write. If not specified, a filename will be
+    /// automatically generated.
+    out: Option<PathBuf>,
 }
 
 fn chrono_to_ntp<TZ>(
@@ -830,6 +831,7 @@ async fn copy<'a>(
 
 /// Writes the `.mp4`, including trying to finish or clean up the file.
 async fn write_mp4(
+    out_path: &std::path::Path,
     opts: &Opts,
     session: retina::client::Session<retina::client::Described>,
     audio_params: Option<Box<AudioParameters>>,
@@ -848,7 +850,7 @@ async fn write_mp4(
     // Append into a filename suffixed with ".partial", then try to either rename it into
     // place if it's complete or delete it otherwise.
     const PARTIAL_SUFFIX: &str = ".partial";
-    let mut tmp_filename = opts.out.as_os_str().to_owned();
+    let mut tmp_filename = out_path.as_os_str().to_owned();
     tmp_filename.push(PARTIAL_SUFFIX); // OsString::push doesn't put in a '/', unlike PathBuf::.
     let tmp_filename: PathBuf = tmp_filename.into();
     let out = tokio::fs::File::create(&tmp_filename).await?;
@@ -862,7 +864,7 @@ async fn write_mp4(
             if let Err(e) = tokio::fs::remove_file(&tmp_filename).await {
                 tracing::error!("and removing .mp4 failed too: {}", e);
             }
-        } else if let Err(e) = tokio::fs::rename(&tmp_filename, &opts.out).await {
+        } else if let Err(e) = tokio::fs::rename(&tmp_filename, out_path).await {
             tracing::error!("unable to move completed .mp4 into place: {}", e);
         }
         Err(e)
@@ -875,7 +877,7 @@ async fn write_mp4(
             }
             Err(e)
         } else {
-            tokio::fs::rename(&tmp_filename, &opts.out).await?;
+            tokio::fs::rename(&tmp_filename, out_path).await?;
             Ok(())
         }
     }
@@ -889,31 +891,99 @@ fn buf_to_avcc(nal: &[u8]) -> Vec<u8> {
     result
 }
 
+/// Convert IP address to camera name via reverse DNS lookup.
+///
+/// If the reverse lookup fails, convert the IP adress to a string.
+async fn reverse_lookup(ip: std::net::IpAddr) -> anyhow::Result<String> {
+    let resolver = hickory_resolver::TokioAsyncResolver::tokio_from_system_conf()?;
+    let response = resolver.reverse_lookup(ip).await;
+    match response {
+        Ok(r) => {
+            let record = r.as_lookup().record_iter().next().unwrap();
+            let fullname = record.name().to_utf8();
+            if !fullname.ends_with(".in-addr.arpa.") {
+                let firstname = fullname.split(".").next().unwrap();
+                return Ok(firstname.to_string());
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Ignoring DNS reverse lookup error: {e}");
+        }
+    }
+
+    match ip {
+        std::net::IpAddr::V4(_) => Ok(format!("ipv4-{ip}").replace(".", "-")),
+        std::net::IpAddr::V6(_) => Ok(format!("ipv6-{ip}").replace(":", "-")),
+    }
+}
+
+/// Convert a URL to a (camera) name.
+///
+/// Ideally, the host name in the URL will have
+async fn url2name(url: &url::Url) -> anyhow::Result<String> {
+    let name = match url.host().unwrap() {
+        url::Host::Domain(name) => {
+            // Is the host an IP address or, ideally, a name?
+            let name = match std::str::FromStr::from_str(name) {
+                // Convert IP address to camera name via reverse DNS lookup.
+                Ok(ip) => reverse_lookup(ip).await?,
+                // Use the name directly
+                Err(_e) => name.to_string(),
+            };
+            name.split(".").next().unwrap().to_string()
+        }
+        // Convert IP address to camera name via reverse DNS lookup.
+        url::Host::Ipv4(ip) => reverse_lookup(std::net::IpAddr::V4(ip)).await?,
+        url::Host::Ipv6(ip) => reverse_lookup(std::net::IpAddr::V6(ip)).await?,
+    };
+    Ok(name)
+}
+
 pub async fn run(opts: Opts) -> Result<(), Error> {
     if matches!(opts.transport, Transport::Udp(_)) && !opts.allow_loss {
         warn!("Using --transport=udp without strongly recommended --allow-loss!");
     }
 
-    if let Some(start) = &opts.start {
+    let mut cam_name = None;
+    if opts.out.is_none() {
+        let name = url2name(&opts.src.url).await?;
+        tracing::info!("No MP4 output name given. Discovered camera name: \"{name}\".");
+        cam_name = Some(name);
+    }
+    let (start, wait_dur) = if let Some(start) = &opts.start {
         let now = chrono::Local::now();
         let dt = chrono::NaiveDateTime::new(now.date_naive(), *start);
         let start = dt.and_local_timezone(chrono::Local).unwrap();
         let wait_dur = start - now;
-        if wait_dur.num_milliseconds() >= 0 {
-            info!(
-                "Start time specified as {start}. Waiting {} seconds.",
-                wait_dur.num_seconds()
-            );
-            loop {
-                if chrono::Local::now() >= start {
-                    break;
-                } else {
-                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-                }
+        (start, wait_dur)
+    } else {
+        (chrono::Local::now(), chrono::TimeDelta::microseconds(0))
+    };
+
+    let out_path = match &opts.out {
+        Some(fname) => fname.clone(),
+        None => std::path::PathBuf::from(format!(
+            "movie{}_{}.mp4",
+            start.format("%Y%m%d_%H%M%S"),
+            cam_name.unwrap()
+        )),
+    };
+    tracing::info!("Will save MP4 file to: \"{}\"", out_path.display());
+
+    if wait_dur.num_milliseconds() >= 0 {
+        info!(
+            "Start time specified as {start}. Waiting {} seconds.",
+            wait_dur.num_seconds()
+        );
+        loop {
+            if chrono::Local::now() >= start {
+                break;
+            } else {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
-        } else {
-            anyhow::bail!("Start time already passed.");
         }
+    } else {
+        anyhow::bail!("Start time already passed.");
     }
 
     let creds = super::creds(opts.src.username.clone(), opts.src.password.clone());
@@ -989,7 +1059,14 @@ pub async fn run(opts: Opts) -> Result<(), Error> {
     if video_stream_i.is_none() && audio_stream.is_none() {
         bail!("Exiting because no video or audio stream was selected; see info log messages above");
     }
-    let result = write_mp4(&opts, session, audio_stream.map(|(_i, p)| p), stop_signal).await;
+    let result = write_mp4(
+        &out_path,
+        &opts,
+        session,
+        audio_stream.map(|(_i, p)| p),
+        stop_signal,
+    )
+    .await;
     if result.is_err() {
         tracing::error!("Writing MP4 failed. Taking down RTSP session.");
     }
