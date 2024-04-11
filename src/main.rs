@@ -6,6 +6,7 @@
 //! Documentation and repository at
 //! [github.com/strawlab/retina-record](https://github.com/strawlab/retina-record).
 
+mod logging;
 mod mp4;
 
 use anyhow::Error;
@@ -44,7 +45,7 @@ fn creds(
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    tracing_subscriber::fmt::init();
+    logging::initiate_logging::<&str>(None, false).unwrap();
     let opts = mp4::Opts::parse();
     mp4::run(opts).await
 }
